@@ -13,7 +13,7 @@ namespace persist
 
     class shared_base   // unix version
     {
-    protected:
+    public:
         int fd;
         pthread_mutex_t mem_mutex;
         pthread_mutex_t user_mutex;

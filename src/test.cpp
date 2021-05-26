@@ -65,19 +65,21 @@ public:
     
     void TestModes()
     {
-        persist::map_file file(nullptr, 16384, 16384, persist::temp_heap);
-        CHECK(file);
-        
-        persist::map_data<Demo> data { file, file };
-        data->value = 10;
-        
-        bool failed = false;
-        for(int i=0; i<100; ++i)
         {
-            auto p = file.malloc(1000);
-            if(!p) failed = true;
+            persist::map_file file(nullptr, 16384, 16384, persist::temp_heap);
+            CHECK(file);
+            
+            persist::map_data<Demo> data { file, file };
+            data->value = 10;
+            
+            bool failed = false;
+            for(int i=0; i<100; ++i)
+            {
+                auto p = file.malloc(1000);
+                if(!p) failed = true;
+            }
+            CHECK(failed);
         }
-        CHECK(failed);
 
         {
             persist::map_file file("file.db", 16384, 10000, persist::create_new);

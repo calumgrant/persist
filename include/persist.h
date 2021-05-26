@@ -31,6 +31,8 @@ namespace persist
         std::atomic<char *> top, end;
 
         void *free_space[64];   // An embarrassingly simple memory manager
+        
+        shared_base extra;
     };
 
 
@@ -40,16 +42,11 @@ namespace persist
     // A wrapper around a block of shared memory.
     // This provides memory management functions, locking, and
     // extends the heap when necessary.
-    class map_file : public shared_base
+    class map_file
     {
         struct shared_data *map_address;
-        size_t mapped_size;
-        void *base_address;
-        int flags;
 
         void extend_mapping(size_t size);
-        void remap();
-        void map(size_t size);
         void unmap();
         void lockMem();
         void unlockMem();

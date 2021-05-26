@@ -18,27 +18,24 @@ using namespace persist;
 // It first read the first part of the file, and the might need to remap the file to the 
 // location specified by the first invocation of the map.
 
-map_file::map_file(const char *filename, size_t length, size_t limit, int f, size_t base)
+map_file::map_file(const char *filename, size_t length, size_t limit, int flags, size_t base)
 {
     map_address = 0;
-    base_address = (void*)base;
-    flags = f;
-    fd = -1;
-
-    open(filename, length, limit, f, base);
+    open(filename, length, limit, flags, base);
 }
 
-void map_file::open(const char *filename, size_t length, size_t limit, int f, size_t base)
+void map_file::open(const char *filename, size_t length, size_t limit, int flags, size_t base)
 {
     close();
     // mem_mutex = PTHREAD_MUTEX_INITIALIZER;
     // user_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-    pthread_mutex_init(&mem_mutex, 0);
-    pthread_mutex_init(&user_mutex, 0);
+    int mapFlags;
 
     if(flags & private_map) mapFlags = MAP_PRIVATE|MAP_FIXED;
     else mapFlags =  MAP_SHARED|MAP_FIXED;
+    
+    int fd = -1;
     
     if(flags & temp_heap)
         mapFlags |= MAP_ANON;
@@ -72,19 +69,18 @@ void map_file::open(const char *filename, size_t length, size_t limit, int f, si
     }
     
     // Seek to the end of the file: we need to ensure enough of the file is allocated
-    if(base_address == 0) mapFlags -= MAP_FIXED;
+    if(base == 0) mapFlags -= MAP_FIXED;
 
-    char *addr = (char*)mmap((char*)base_address, length, PROT_WRITE|PROT_READ, mapFlags, fd, 0);
+    char *addr = (char*)mmap((char*)base, length, PROT_WRITE|PROT_READ, mapFlags, fd, 0);
 
     if(addr == MAP_FAILED)
         map_address = 0;
     else
         map_address = (shared_data*)addr;
 
-    if(base_address == 0)
+    if(base == 0)
     {
         mapFlags += MAP_FIXED;
-        base_address = map_address;
     }
 
     if(map_address)
@@ -98,7 +94,7 @@ void map_file::open(const char *filename, size_t length, size_t limit, int f, si
         {
              munmap((char*)map_address, length);
              length = previous_length;
-             base_address = previous_address;
+             auto base_address = previous_address;
 
              addr = (char*)mmap((char*)base_address, length, PROT_WRITE|PROT_READ, mapFlags, fd, 0);
 
@@ -110,14 +106,10 @@ void map_file::open(const char *filename, size_t length, size_t limit, int f, si
              }
 
         }
-        else
-            base_address = map_address;
     }
 
     if(map_address)
     {
-        mapped_size = length;
-
         if(map_address->address)
         {
             if(map_address->address != map_address)
@@ -137,14 +129,15 @@ void map_file::open(const char *filename, size_t length, size_t limit, int f, si
             map_address->root = map_address+1;
             map_address->end = (char*)map_address + length;
             map_address->top = (char*)map_address->root;
+            
+            pthread_mutex_init(&map_address->extra.mem_mutex, 0);
+            pthread_mutex_init(&map_address->extra.user_mutex, 0);
+            map_address->extra.mapFlags = mapFlags;
 
             // This is not needed
             for(int i=0; i<64; ++i) map_address->free_space[i] = 0;
         }
     }
-
-    if(base_address == 0) base_address = map_address;
-    if(map_address) assert(map_address == base_address);
 
     // Report on where it ended up
     // std::cout << "Mapped to " << map_address << std::endl;
@@ -162,9 +155,12 @@ map_file::~map_file()
 
 void map_file::close()
 {
-    unmap();
-    ::close(fd);
-    fd = -1;
+    if(map_address)
+    {
+        int fd = map_address->extra.fd;
+        unmap();
+        ::close(fd);
+    }
 }
 
 
@@ -172,38 +168,8 @@ void map_file::unmap()
 {
     if(map_address)
     {
-        munmap((char*)map_address, mapped_size);
+        munmap((char*)map_address, map_address->current_size);
         map_address = 0;
-    }
-}
-
-void map_file::map(size_t new_size)
-{
-    if(!map_address)
-    {
-        char *m = (char*)mmap((char*)base_address, new_size, PROT_WRITE|PROT_READ, mapFlags, fd, 0);
-
-        if(m != MAP_FAILED)
-        {
-            map_address = (shared_data*)base_address;
-            mapped_size = new_size;
-        }
-    }
-}
-
-
-void map_file::remap()
-{
-    if(mapped_size < map_address->current_size)
-    {
-        // Another process has increased the shared memory
-        // we must therefore increase our own usage
-
-        // TODO: remap
-
-        size_t new_length = map_address->current_size;
-        unmap();
-        map(new_length);
     }
 }
 
@@ -224,8 +190,8 @@ void map_file::extend_mapping(size_t extra)
 
     // extend the file a bit
     char c=0;
-    lseek(fd, new_length-1, SEEK_SET);
-    write(fd, &c, 1);
+    lseek(map_address->extra.fd, new_length-1, SEEK_SET);
+    write(map_address->extra.fd, &c, 1);
 
 #if MREMAP
     void *new_address = mremap((char*)map_address, old_length, new_length, 0);  // Do NOT relocate it
@@ -237,6 +203,9 @@ void map_file::extend_mapping(size_t extra)
     }
 #else
 
+    int mapFlags = map_address->extra.mapFlags;
+    int fd = map_address->extra.fd;
+    
     munmap((char*)map_address, old_length);
 
     char *m = (char*)mmap((char*)map_address, new_length, PROT_WRITE|PROT_READ, mapFlags, fd, 0);
@@ -251,43 +220,38 @@ void map_file::extend_mapping(size_t extra)
     else
     {
         assert(m == (char*)map_address);
-        mapped_size = new_length;
         map_address->current_size = new_length;
         map_address->end = (char*)map_address + new_length;
     }
 
 #endif
-    assert(map_address == base_address);
 }
 
 
 bool map_file::lock(int ms)
 {
-    remap();
-
-    pthread_mutex_lock(&user_mutex);
+    pthread_mutex_lock(&map_address->extra.user_mutex);
     return true;
 }
 
 
 void map_file::unlock()
 {
-    pthread_mutex_unlock(&user_mutex);
+    pthread_mutex_unlock(&map_address->extra.user_mutex);
 }
 
 void map_file::lockMem()
 {
-    pthread_mutex_lock(&mem_mutex);    
+    pthread_mutex_lock(&map_address->extra.mem_mutex);
 }
 
 
 void map_file::unlockMem()
 {
-    pthread_mutex_unlock(&mem_mutex);
+    pthread_mutex_unlock(&map_address->extra.mem_mutex);
 }
 
 map_file::map_file()
 {
     map_address = nullptr;
-    fd = -1;
 }
