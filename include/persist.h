@@ -188,9 +188,7 @@ namespace persist
     class fast_allocator : public std::allocator<T>
     {
     public:
-        fast_allocator(map_file & map) : map(map) { }
-
-        map_file & map;
+        fast_allocator(map_file & map) : map(map.data()) { }
         
         // Construct from another allocator
         template<class O>
@@ -206,7 +204,7 @@ namespace persist
 
         pointer allocate(size_type n)
         {
-            pointer p = static_cast<pointer>(map.data().fast_malloc(n * sizeof(T)));
+            pointer p = static_cast<pointer>(map.fast_malloc(n * sizeof(T)));
             if(!p) throw std::bad_alloc();
 
             return p;
@@ -214,7 +212,6 @@ namespace persist
 
         void deallocate(pointer p, size_type count)
         {
-            map.data().free(p, count * sizeof(T));
         }
 
         size_type max_size() const
@@ -227,6 +224,8 @@ namespace persist
         {
             typedef fast_allocator<Other> other;
         };
+        
+        shared_memory & map;
     };
 
 
@@ -234,10 +233,8 @@ namespace persist
     class allocator : public std::allocator<T>
     {
     public:
-        allocator(map_file & map) : map(map) { }
+        allocator(map_file & map) : map(map.data()) { }
 
-        map_file & map;
-        
         // Construct from another allocator
         template<class O>
         allocator(const allocator<O>&o) : map(o.map) { }
@@ -252,7 +249,7 @@ namespace persist
 
         pointer allocate(size_type n)
         {
-            pointer p = static_cast<pointer>(map.data().malloc(n * sizeof(T)));
+            pointer p = static_cast<pointer>(map.malloc(n * sizeof(T)));
             if(!p) throw std::bad_alloc();
 
             return p;
@@ -260,7 +257,7 @@ namespace persist
 
         void deallocate(pointer p, size_type count)
         {
-            map.data().free(p, count * sizeof(T));
+            map.free(p, count * sizeof(T));
         }
 
         size_type max_size() const
@@ -273,6 +270,8 @@ namespace persist
 		{
             typedef allocator<Other> other;
 		};
+    
+        shared_memory & map;
     };
 
     template<class T>
@@ -282,7 +281,7 @@ namespace persist
         typedef T value_type;
         
         template<typename... ConstructorArgs>
-        map_data(map_file & file, ConstructorArgs&&... init) : file(file)
+        map_data(map_file & file, ConstructorArgs&&... init) : file(file.data())
         {
             if(file.data().empty())
             {                
@@ -290,9 +289,9 @@ namespace persist
             }
         }
 
-        map_data(map_file & file) : file(file)
+        map_data(map_file & file) : file(file.data())
         {
-            if(file.data().empty())
+            if(this->file.empty())
             {
                 new(file) value_type();
             }
@@ -300,16 +299,16 @@ namespace persist
         
         value_type &operator*()
         {
-            return *static_cast<T*>(file.data().root());
+            return *static_cast<T*>(file.root());
         }
 
         value_type *operator->()
         {
-            return static_cast<T*>(file.data().root());
+            return static_cast<T*>(file.root());
         }
 
     private:
-        map_file & file;
+        shared_memory & file;
     };
 }
 

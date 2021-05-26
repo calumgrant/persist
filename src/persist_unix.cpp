@@ -132,6 +132,7 @@ void map_file::open(const char *filename, size_t length, size_t limit, int flags
             pthread_mutex_init(&map_address->extra.mem_mutex, 0);
             pthread_mutex_init(&map_address->extra.user_mutex, 0);
             map_address->extra.mapFlags = mapFlags;
+            map_address->extra.fd = fd;
 
             // This is not needed
             for(int i=0; i<64; ++i) map_address->free_space[i] = 0;
