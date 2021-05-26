@@ -18,17 +18,17 @@ using namespace persist;
 // It first read the first part of the file, and the might need to remap the file to the 
 // location specified by the first invocation of the map.
 
-map_file::map_file(const char *filename, size_t length, int f, size_t base)
+map_file::map_file(const char *filename, size_t length, size_t limit, int f, size_t base)
 {
     map_address = 0;
     base_address = (void*)base;
     flags = f;
     fd = -1;
 
-    open(filename, length, f, base);
+    open(filename, length, limit, f, base);
 }
 
-void map_file::open(const char *filename, size_t length, int f, size_t base)
+void map_file::open(const char *filename, size_t length, size_t limit, int f, size_t base)
 {
     close();
     // mem_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -39,24 +39,38 @@ void map_file::open(const char *filename, size_t length, int f, size_t base)
 
     if(flags & private_map) mapFlags = MAP_PRIVATE|MAP_FIXED;
     else mapFlags =  MAP_SHARED|MAP_FIXED;
-
-    fd = ::open(filename, O_RDWR, S_IRWXU|S_IRGRP|S_IROTH);
-
-    if(fd == -1)
+    
+    if(flags & temp_heap)
+        mapFlags |= MAP_ANON;
+    else
     {
-        // File did not exist, so we create it instead
+        int open_flags = O_RDWR;
+        if(flags & create_new) open_flags |= O_TRUNC;
+        
+        fd = ::open(filename, open_flags, S_IRWXU|S_IRGRP|S_IROTH);
+        
+        if(fd == -1)
+        {
+            // File did not exist, so we create it instead
 
-        fd = ::open(filename, O_CREAT|O_RDWR, S_IRWXU|S_IRGRP|S_IROTH);
+            fd = ::open(filename, O_CREAT|O_RDWR, S_IRWXU|S_IRGRP|S_IROTH);
 
-        if(fd == -1) return;  // Failed to create file
+            if(fd == -1) return;  // Failed to create file
 
-        // Fill up the file with zeros
+            // Fill up the file with zeros
 
-        char c=0;
-        lseek(fd, length-1, SEEK_SET);
-        write(fd, &c, 1);
+            char c=0;
+            lseek(fd, length-1, SEEK_SET);
+            write(fd, &c, 1);
+        }
+        else if(flags & create_new)
+        {
+            char c=0;
+            lseek(fd, length-1, SEEK_SET);
+            write(fd, &c, 1);
+        }
     }
-
+    
     // Seek to the end of the file: we need to ensure enough of the file is allocated
     if(base_address == 0) mapFlags -= MAP_FIXED;
 
@@ -268,4 +282,10 @@ void map_file::lockMem()
 void map_file::unlockMem()
 {
     pthread_mutex_unlock(&mem_mutex);
+}
+
+map_file::map_file()
+{
+    map_address = nullptr;
+    fd = -1;
 }
