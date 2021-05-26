@@ -14,6 +14,28 @@
 
 namespace persist
 {
+    class map_reference;
+
+    struct shared_data
+    {
+        shared_data *address;   // The address we expect to be at - we need to reopen if this fails
+
+        size_t length;          // The size of the allocation
+        bool auto_grow;         // Whether this length should be increased on demand
+        size_t segment_size;
+
+        // pthread_mutex_t mutex;   // For shared data
+
+        void *condition;
+
+        void *root;
+        char *top;
+        void *end;
+
+        void *free_space[64];   // An embarrassingly simple memory manager
+    };
+
+
     enum { shared_heap=1, private_map=2, auto_grow=4, temp_heap=8, create_new=16, read_only=32 };
 
     // map_file
@@ -69,9 +91,27 @@ namespace persist
 
         // Returns true if the heap is valid and usable
         operator bool() const { return map_address!=0; }
-
+        
+        shared_data &get_data() const;
     };
 
+    class map_reference
+    {
+    public:
+        map_reference(shared_data &map);
+        map_reference(const map_file & file);
+        void *malloc(size_t);
+        void free(void*, size_t);
+        
+        void * fast_malloc(size_t size)
+        {
+            auto result = map_address.top;
+            map_address.top += size;
+            return result;
+        }
+    private:
+        shared_data & map_address;
+    };
 
     // lock
     // A simple lock on the entire file
@@ -89,14 +129,14 @@ namespace persist
     // We don't actually include a reference to the shared file here, since that 
     // would get stored in persistent memory.
     template<class T>
-    class allocator : public std::allocator<T>
+    class global_allocator : public std::allocator<T>
     {
     public:
         // Construct from another allocator
         template<class O>
-        allocator(const allocator<O>&) { }
+        global_allocator(const global_allocator<O>&) { }
 
-        allocator() { }
+        global_allocator() { }
 
         typedef T value_type;
         typedef const T *const_pointer;
@@ -141,39 +181,89 @@ namespace persist
 	    template<class Other>
 		struct rebind
 		{
+            typedef persist::global_allocator<Other> other;
+		};
+    };
+
+    template<class T>
+    class fast_allocator : public std::allocator<T>
+    {
+    public:
+    };
+
+
+    template<class T>
+    class allocator : public std::allocator<T>
+    {
+    public:
+        allocator(map_reference map) : map(map) { }
+
+        map_reference map;
+        
+        // Construct from another allocator
+        template<class O>
+        allocator(const allocator<O>&o) : map(o.map) { }
+
+        typedef T value_type;
+        typedef const T *const_pointer;
+        typedef T *pointer;
+        typedef const T &const_reference;
+        typedef T &reference;
+        typedef typename std::allocator<T>::difference_type difference_type;
+        typedef typename std::allocator<T>::size_type size_type;
+
+        pointer allocate(size_type n)
+        {
+            pointer p = static_cast<pointer>(map.malloc(n * sizeof(T)));
+            if(!p) throw std::bad_alloc();
+
+            return p;
+        }
+
+        void deallocate(pointer p, size_type count)
+        {
+            map.free(p, count * sizeof(T));
+        }
+
+        size_type max_size() const
+        {
+            return -1;
+        }
+
+	    template<class Other>
+		struct rebind
+		{
             typedef persist::allocator<Other> other;
 		};
     };
 
-
-    // map_data
-    // A type-safe wrapper around the root object of a map_file
-    // It also constructs a new object when the file is empty
     template<class T>
-    class map_data : public map_file
+    class map_data
     {
     public:
-        map_data(const char *filename, 
-            size_t length=16384, 
-            int flags = auto_grow,
-            size_t base=default_map_address) :
-            map_file(filename, length, flags, base)
+        typedef T value_type;
+        
+        template<typename... ConstructorArgs>
+        map_data(map_file & file, ConstructorArgs&&... init) : file(file)
         {
-            if(empty())
+            if(file.empty())
             {                
-                new(*this) T();
+                new(file) value_type(std::forward<ConstructorArgs&&...>(init...));
             }
         }
 
-        T &operator*()
+        value_type &operator*()
         {
-            return *static_cast<T*>(root());
+            return *static_cast<T*>(file.root());
         }
 
-        T *operator->()
+        value_type *operator->()
         {
-            return static_cast<T*>(root());
+            return static_cast<T*>(file.root());
         }
+
+    private:
+        map_file & file;
     };
 }
 

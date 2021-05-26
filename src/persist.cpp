@@ -231,3 +231,23 @@ bool map_file::empty() const
 {
     return map_address ? map_address->root == map_address->top : false;  // No objects allocated
 }
+
+persist::map_reference::map_reference(shared_data &map) : map_address(map) { }
+
+persist::map_reference::map_reference(const map_file &map) : map_address(map.get_data()) { }
+
+void * map_reference::malloc(size_t s)
+{
+    return ::malloc(s);
+}
+
+
+void map_reference::free(void *p, size_t s)
+{
+    ::free(p);
+}
+
+shared_data & persist::map_file::get_data() const
+{
+    return *map_address;
+}
