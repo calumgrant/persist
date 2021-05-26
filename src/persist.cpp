@@ -121,7 +121,7 @@ void *map_file::malloc(size_t size)
 
     void *t = map_address->top;
 
-    if(map_address->top + size > map_address->end && map_address->auto_grow)
+    if(map_address->top + size > map_address->end && map_address->max_size > map_address->current_size)
     {
         // We have run out of mapped memory
         extend_mapping(size);      // Try to extend the address space

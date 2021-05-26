@@ -20,9 +20,8 @@ namespace persist
     {
         shared_data *address;   // The address we expect to be at - we need to reopen if this fails
 
-        size_t length;          // The size of the allocation
-        bool auto_grow;         // Whether this length should be increased on demand
-        size_t segment_size;
+        size_t current_size;          // The size of the allocation
+        size_t max_size;
 
         // pthread_mutex_t mutex;   // For shared data
 
@@ -35,7 +34,7 @@ namespace persist
     };
 
 
-    enum { shared_heap=1, private_map=2, auto_grow=4, temp_heap=8, create_new=16, read_only=32 };
+    enum { shared_heap=1, private_map=2, temp_heap=8, create_new=16, read_only=32 };
 
     // map_file
     // A wrapper around a block of shared memory.
@@ -62,7 +61,7 @@ namespace persist
         map_file(const char *filename, 
             size_t length=16384,
             size_t limit=1000000,
-            int flags = auto_grow,
+            int flags = 0,
             size_t base=default_map_address);   
 
         ~map_file();
@@ -70,7 +69,7 @@ namespace persist
         void open(const char *filename, 
             size_t length=16384, 
             size_t limit=1000000,
-            int flags = auto_grow,
+            int flags = 0,
             size_t base=default_map_address);
 
         void close();

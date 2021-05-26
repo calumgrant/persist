@@ -92,7 +92,7 @@ void map_file::open(const char *filename, size_t length, size_t limit, int f, si
         // Remap the file according to the specifications in the header file
 
         void *previous_address = map_address->address;
-        size_t previous_length = map_address->length;
+        size_t previous_length = map_address->current_size;
 
         if(previous_address && (previous_length != length || previous_address != map_address))
         {
@@ -132,11 +132,11 @@ void map_file::open(const char *filename, size_t length, size_t limit, int f, si
         {
             // This is a new address
             map_address->address = map_address;
-            map_address->length = length;
+            map_address->current_size = length;
+            map_address->max_size = limit;
             map_address->root = map_address+1;
             map_address->end = (char*)map_address + length;
             map_address->top = (char*)map_address->root;
-            map_address->auto_grow = flags&auto_grow;
 
             // This is not needed
             for(int i=0; i<64; ++i) map_address->free_space[i] = 0;
@@ -194,14 +194,14 @@ void map_file::map(size_t new_size)
 
 void map_file::remap()
 {
-    if(mapped_size < map_address->length)
+    if(mapped_size < map_address->current_size)
     {
         // Another process has increased the shared memory
         // we must therefore increase our own usage
 
         // TODO: remap
 
-        size_t new_length = map_address->length;
+        size_t new_length = map_address->current_size;
         unmap();
         map(new_length);
     }
@@ -213,12 +213,14 @@ void map_file::remap()
 void map_file::extend_mapping(size_t extra)
 {
     // assert(map_address == base_address);
-    size_t old_length = map_address->length;
+    size_t old_length = map_address->current_size;
 
     if(extra<16384) extra = 16384;
     if(extra < old_length/2) extra = old_length/2;
 
     size_t new_length = old_length + extra;
+    if(new_length > map_address->max_size)
+        new_length = map_address->max_size;
 
     // extend the file a bit
     char c=0;
@@ -250,7 +252,7 @@ void map_file::extend_mapping(size_t extra)
     {
         assert(m == (char*)map_address);
         mapped_size = new_length;
-        map_address->length = new_length;
+        map_address->current_size = new_length;
         map_address->end = (char*)map_address + new_length;
     }
 

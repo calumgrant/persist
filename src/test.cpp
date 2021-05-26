@@ -24,7 +24,7 @@ public:
 
     void EmptyFile()
     {
-        persist::map_file file("file.db");
+        persist::map_file file("file.db", 1000, 1000, persist::create_new);
         CHECK(file);
         CHECK(file.empty());
     }
@@ -65,28 +65,32 @@ public:
     
     void TestModes()
     {
-        persist::map_file file(nullptr, 16384, 10000, persist::auto_grow|persist::temp_heap);
+        persist::map_file file(nullptr, 16384, 16384, persist::temp_heap);
         CHECK(file);
         
         persist::map_data<Demo> data { file, file };
         data->value = 10;
         
-        for(int i=0; i<1000; ++i)
+        bool failed = false;
+        for(int i=0; i<100; ++i)
         {
-            auto p = file.malloc(100);
-            CHECK(p);
+            auto p = file.malloc(1000);
+            if(!p) failed = true;
         }
-        
+        CHECK(failed);
+
         {
-            persist::map_file file("file.db", 16384, 10000, persist::auto_grow|persist::create_new);
+            persist::map_file file("file.db", 16384, 10000, persist::create_new);
             CHECK(file);
+            persist::map_data<Demo> data { file, file };
             EQUALS(0, data->value);
             data->value = 10;
         }
 
         {
-            persist::map_file file("file.db", 16384, 10000, persist::auto_grow);
+            persist::map_file file("file.db", 16384, 10000);
             CHECK(file);
+            persist::map_data<Demo> data { file, file };
             EQUALS(10, data->value);
         }
 
@@ -95,7 +99,7 @@ public:
 
     void TestAllocators()
     {
-        persist::map_file file(nullptr, 16384, 1000000, persist::auto_grow|persist::temp_heap);
+        persist::map_file file(nullptr, 16384, 1000000, persist::temp_heap);
         CHECK(file);
         
         persist::map_data<Demo> data { file, file };
