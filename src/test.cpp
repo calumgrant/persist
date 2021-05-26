@@ -26,7 +26,7 @@ public:
     {
         persist::map_file file("file.db", 1000, 1000, persist::create_new);
         CHECK(file);
-        CHECK(file.empty());
+        CHECK(file.data().empty());
     }
     
     void Versions()
@@ -75,7 +75,7 @@ public:
             bool failed = false;
             for(int i=0; i<100; ++i)
             {
-                auto p = file.malloc(1000);
+                auto p = file.data().malloc(1000);
                 if(!p) failed = true;
             }
             CHECK(failed);

@@ -27,7 +27,7 @@ map_file *map_file::global = 0;
 
 void *operator new(size_t size, persist::map_file &file)
 {
-    void *p = file.malloc(size);
+    void *p = file.data().malloc(size);
 
     if(!p) throw std::bad_alloc();
 
@@ -83,23 +83,21 @@ inline int object_cell(size_t &req_size)
 // If possible, use a block in the free_space instead of growing the heap.
 // Mutexed, threadsafe - very important.
 
-void *map_file::malloc(size_t size)
+void *shared_memory::malloc(size_t size)
 {
-    if(!map_address) return 0;
-
-    if(size==0) return map_address->top;  // A valid address?  TODO
+    if(size==0) return top;  // A valid address?  TODO
 
     lockMem();
     
     int free_cell = object_cell(size);
 
 #if RECYCLE   
-    if(map_address->free_space[free_cell])
+    if(free_space[free_cell])
     {
         // We have a free cell of the desired size
 
-        void *block = map_address->free_space[free_cell];
-        map_address->free_space[free_cell] = *(void**)block;
+        void *block = free_space[free_cell];
+        free_space[free_cell] = *(void**)block;
 
 #if CHECK_MEM
         ((int*)block)[-1] = size;
@@ -119,23 +117,23 @@ void *map_file::malloc(size_t size)
     map_address->top += sizeof(int);
 #endif
 
-    void *t = map_address->top;
+    void *t = top;
 
-    if(map_address->top + size > map_address->end && map_address->max_size > map_address->current_size)
+    if(top + size > end && max_size > current_size)
     {
         // We have run out of mapped memory
         extend_mapping(size);      // Try to extend the address space
     }
 
 
-    if(map_address->top + size > map_address->end)
+    if(top + size > end)
     {
         // We were unable to extend the mapped memory
         unlockMem();
         return 0;  // Failure
     }
 
-    map_address->top += size;
+    top += size;
 
 #if TRACE_ALLOCS
     std::cout << " +" << t << "(" << size << ")";
@@ -152,7 +150,7 @@ void *map_file::malloc(size_t size)
 // Free blocks are stored in a linked list, starting at the vector free_cell.
 // The minimum allocation size is 4 bytes to accomodate the pointer
 
-void map_file::free(void* block, size_t size)
+void shared_memory::free(void* block, size_t size)
 {
     lockMem();
 
@@ -161,7 +159,7 @@ void map_file::free(void* block, size_t size)
 #endif
     if(size==0) return;  // Do nothing    
 
-    if(block <map_address || block >=map_address->end)
+    if(block < this || block >= end)
     {
         // We have attempted to "free" data not allocated by this memory manager
         // This is a serious fault, but we carry on
@@ -173,7 +171,7 @@ void map_file::free(void* block, size_t size)
         return;
     }
 
-    assert(block>=map_address && block<map_address->end);
+    assert(block>=this && block<end);
         // This means that the address is not managed by this heap!
 
 #if CHECK_MEM
@@ -186,8 +184,8 @@ void map_file::free(void* block, size_t size)
     // free_cell is the cell number for blocks of size "size"
 
     // Add the free block to the linked list in free_space
-    *(void**)block = map_address->free_space[free_cell];
-    map_address->free_space[free_cell] = block;
+    *(void**)block = free_space[free_cell];
+    free_space[free_cell] = block;
 #endif
 
     unlockMem();
@@ -210,15 +208,14 @@ void map_file::select(int seg)
 //
 // Returns a pointer to the first object in the heap.
 
-void *map_file::root() const
+void *shared_memory::root()
 {
-    if(!map_address) return 0;  // Failed
+    return this+1;
+}
 
-#if CHECK_MEM
-    return (int*)map_address->root + 1;
-#endif
-
-    return map_address->root;
+const void *shared_memory::root() const
+{
+    return this+1;
 }
 
 
@@ -227,7 +224,12 @@ void *map_file::root() const
 // Returns true of the heap is empty - no objects have been allocated.
 // This tells us if we need to construct a root object.
 
-bool map_file::empty() const
+bool shared_memory::empty() const
 {
-    return map_address ? map_address->root == map_address->top : false;  // No objects allocated
+    return root() == top;  // No objects allocated
+}
+
+shared_memory & map_file::data() const
+{
+    return *map_address;
 }

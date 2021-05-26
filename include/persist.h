@@ -16,9 +16,39 @@ namespace persist
 {
     class map_reference;
 
-    struct shared_data
+    class shared_memory
     {
-        shared_data *address;   // The address we expect to be at - we need to reopen if this fails
+    public:
+        // Returns true if the heap is empty: no objects have yet been created
+        bool empty() const;
+        
+        bool lock(int ms=0);    // Mutex the entire heap
+        void unlock();          // Release the entire heap
+
+        bool wait(int ms=0);    // Wait for event
+        void signal();          // Signal event
+
+        void *root();     // The root object
+        const void *root() const;     // The root object
+        
+        void *malloc(size_t);
+        void free(void*, size_t);
+        
+        void *fast_malloc(size_t size)
+        {
+            auto result = top += size;
+            if(result > end)
+            {
+                extend_mapping(size);
+            }
+            return result;
+        }
+
+
+    private:
+        friend class map_file;
+        
+        shared_memory *address;   // The address we expect to be at - we need to reopen if this fails
 
         size_t current_size;          // The size of the allocation
         size_t max_size;
@@ -27,12 +57,17 @@ namespace persist
 
         void *condition;
 
-        void *root;
         std::atomic<char *> top, end;
 
         void *free_space[64];   // An embarrassingly simple memory manager
         
         shared_base extra;
+        
+        void extend_mapping(size_t size);
+        void unmap();
+        void lockMem();
+        void unlockMem();
+
     };
 
 
@@ -44,12 +79,7 @@ namespace persist
     // extends the heap when necessary.
     class map_file
     {
-        struct shared_data *map_address;
-
-        void extend_mapping(size_t size);
-        void unmap();
-        void lockMem();
-        void unlockMem();
+        shared_memory *map_address;
 
     public:
 
@@ -71,37 +101,15 @@ namespace persist
 
         void close();
 
-        void *malloc(size_t);
-        void free(void*, size_t);
-        
-        void *fast_malloc(size_t size)
-        {
-            auto result = map_address->top += size;
-            if(result > map_address->end)
-            {
-                extend_mapping(size);
-            }
-            return result;
-        }
 
-        bool lock(int ms=0);    // Mutex the entire heap
-        void unlock();          // Release the entire heap
-
-        bool wait(int ms=0);    // Wait for event
-        void signal();          // Signal event
-
-        void *root() const;     // The root object
         void select(int seg);   // Makes the given segment usable
 
         static map_file *global;  // The global pointer
 
-        // Returns true if the heap is empty: no objects have yet been created
-        bool empty() const;
-
         // Returns true if the heap is valid and usable
         operator bool() const { return map_address!=0; }
         
-        shared_data &get_data() const;
+        shared_memory &data() const;
     };
 
     // lock
@@ -109,8 +117,8 @@ namespace persist
     class lock
     {
     public:
-        lock(int t=0) { map_file::global->lock(t); }
-        ~lock() { map_file::global->unlock(); }
+        lock(int t=0) { map_file::global->data().lock(t); }
+        ~lock() { map_file::global->data().unlock(); }
     };
     
 
@@ -140,7 +148,7 @@ namespace persist
         pointer allocate(size_type n)
         {
             if(!map_file::global) throw std::bad_alloc();
-            pointer p = static_cast<pointer>(map_file::global->malloc(n * sizeof(T)));
+            pointer p = static_cast<pointer>(map_file::global->data().malloc(n * sizeof(T)));
             if(!p) throw std::bad_alloc();
 
             return p;
@@ -149,7 +157,7 @@ namespace persist
         void deallocate(pointer p, size_type count)
         {
             if(map_file::global)
-                map_file::global->free(p, count * sizeof(T));
+                map_file::global->data().free(p, count * sizeof(T));
         }
 
         size_type max_size() const
@@ -198,7 +206,7 @@ namespace persist
 
         pointer allocate(size_type n)
         {
-            pointer p = static_cast<pointer>(map.fast_malloc(n * sizeof(T)));
+            pointer p = static_cast<pointer>(map.data().fast_malloc(n * sizeof(T)));
             if(!p) throw std::bad_alloc();
 
             return p;
@@ -206,7 +214,7 @@ namespace persist
 
         void deallocate(pointer p, size_type count)
         {
-            map.free(p, count * sizeof(T));
+            map.data().free(p, count * sizeof(T));
         }
 
         size_type max_size() const
@@ -244,7 +252,7 @@ namespace persist
 
         pointer allocate(size_type n)
         {
-            pointer p = static_cast<pointer>(map.malloc(n * sizeof(T)));
+            pointer p = static_cast<pointer>(map.data().malloc(n * sizeof(T)));
             if(!p) throw std::bad_alloc();
 
             return p;
@@ -252,7 +260,7 @@ namespace persist
 
         void deallocate(pointer p, size_type count)
         {
-            map.free(p, count * sizeof(T));
+            map.data().free(p, count * sizeof(T));
         }
 
         size_type max_size() const
@@ -276,7 +284,7 @@ namespace persist
         template<typename... ConstructorArgs>
         map_data(map_file & file, ConstructorArgs&&... init) : file(file)
         {
-            if(file.empty())
+            if(file.data().empty())
             {                
                 new(file) value_type(std::forward<ConstructorArgs&&...>(init...));
             }
@@ -284,7 +292,7 @@ namespace persist
 
         map_data(map_file & file) : file(file)
         {
-            if(file.empty())
+            if(file.data().empty())
             {
                 new(file) value_type();
             }
@@ -292,12 +300,12 @@ namespace persist
         
         value_type &operator*()
         {
-            return *static_cast<T*>(file.root());
+            return *static_cast<T*>(file.data().root());
         }
 
         value_type *operator->()
         {
-            return static_cast<T*>(file.root());
+            return static_cast<T*>(file.data().root());
         }
 
     private:
