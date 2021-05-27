@@ -1,4 +1,4 @@
-// Copyright (C) Calum Grant 2003
+// Copyright (C) Calum Grant 2003-2021
 // Copying permitted under the terms of the GNU Public Licence (GPL)
 
 #ifndef PERSIST_H
@@ -14,7 +14,13 @@
 
 namespace persist
 {
-    class map_reference;
+    // Exception thrown when an invalid datafile is opened,
+    // or the datafile is the wrong version.
+    class InvalidVersion : public std::runtime_error
+    {
+    public:
+        InvalidVersion();
+    };
 
     class shared_memory
     {
@@ -38,7 +44,8 @@ namespace persist
         
         void clear();
         
-        size_t capacity() const;
+        size_type capacity() const;
+        size_type size() const;
         
         void *fast_malloc(size_t size)
         {
@@ -56,9 +63,15 @@ namespace persist
             return result - size;
         }
 
-
     private:
         friend class map_file;
+        
+        // Magic bytes to check we have loaded the correct version
+        int magic;
+        int applicationId;
+        short majorVersion;
+        short minorVersion;
+        int hardwareId;
         
         shared_memory *address;   // The address we expect to be at - we need to reopen if this fails
 
@@ -77,7 +90,6 @@ namespace persist
         void unmap();
         void lockMem();
         void unlockMem();
-
     };
 
 
@@ -95,7 +107,10 @@ namespace persist
 
         map_file();
         
-        map_file(const char *filename, 
+        map_file(const char *filename,
+                int applicationId,
+                 short majorVersion,
+                 short minorVersion,
             size_t length=16384,
             size_t limit=1000000,
             int flags = 0,
@@ -104,94 +119,20 @@ namespace persist
         ~map_file();
 
         void open(const char *filename, 
-            size_t length=16384, 
+                  int applicationId,
+                   short majorVersion,
+                   short minorVersion,
+            size_t length=16384,
             size_t limit=1000000,
             int flags = 0,
             size_t base=default_map_address);
 
         void close();
 
-
-        void select(int seg);   // Makes the given segment usable
-
-        static map_file *global;  // The global pointer
-
         // Returns true if the heap is valid and usable
         operator bool() const { return map_address!=0; }
         
         shared_memory &data() const;
-    };
-
-    // lock
-    // A simple lock on the entire file
-    class lock
-    {
-    public:
-        lock(int t=0) { map_file::global->data().lock(t); }
-        ~lock() { map_file::global->data().unlock(); }
-    };
-    
-
-    // shared_alloc
-    // An allocator compatible with the STL
-    // This allocator uses the default map_file.  
-    // We don't actually include a reference to the shared file here, since that 
-    // would get stored in persistent memory.
-    template<class T>
-    class global_allocator : public std::allocator<T>
-    {
-    public:
-        // Construct from another allocator
-        template<class O>
-        global_allocator(const global_allocator<O>&) { }
-
-        global_allocator() { }
-
-        typedef T value_type;
-        typedef const T *const_pointer;
-        typedef T *pointer;
-        typedef const T &const_reference;
-        typedef T &reference;
-        typedef typename std::allocator<T>::difference_type difference_type;
-        typedef typename std::allocator<T>::size_type size_type;
-
-        pointer allocate(size_type n)
-        {
-            if(!map_file::global) throw std::bad_alloc();
-            pointer p = static_cast<pointer>(map_file::global->data().malloc(n * sizeof(T)));
-            if(!p) throw std::bad_alloc();
-
-            return p;
-        }
-
-        void deallocate(pointer p, size_type count)
-        {
-            if(map_file::global)
-                map_file::global->data().free(p, count * sizeof(T));
-        }
-
-        size_type max_size() const
-        {
-            if(!map_file::global) return 0;
-
-            return -1;
-        }
-
-        void construct(pointer p, const_reference v)
-        {
-            std::allocator<T>::construct(p,v);
-        }
-
-        void destroy(pointer p)
-        {
-            std::allocator<T>::destroy(p);
-        }
-
-	    template<class Other>
-		struct rebind
-		{
-            typedef persist::global_allocator<Other> other;
-		};
     };
 
     template<class T>
@@ -227,7 +168,7 @@ namespace persist
 
         size_type max_size() const
         {
-            return -1;
+            return map.capacity()/sizeof(T);
         }
 
         template<class Other>
@@ -274,7 +215,7 @@ namespace persist
 
         size_type max_size() const
         {
-            return -1;
+            return map.capacity()/sizeof(T);
         }
 
 	    template<class Other>

@@ -9,8 +9,6 @@
 
 using namespace persist;
 
-map_file *map_file::global = 0;
-
 // Whether to reuse freed memory (yes, you want to do this)
 #define RECYCLE 1 
 
@@ -187,19 +185,6 @@ void shared_memory::free(void* block, size_t size)
     unlockMem();
 }
 
-
-// map_file::select
-//
-// On the off-chance that we have more than one map_file, we make sure
-// this is the one we use
-
-void map_file::select(int seg)
-{
-    assert(seg==0);  // Segments not supported
-    global = this;
-}
-
-
 // map_file::root
 //
 // Returns a pointer to the first object in the heap.
@@ -240,4 +225,13 @@ void shared_memory::clear()
 size_t shared_memory::capacity() const
 {
     return (end-top) + (max_size - current_size);
+}
+
+size_t shared_memory::size() const
+{
+    return top-(char*)root();
+}
+
+InvalidVersion::InvalidVersion() : std::runtime_error("Version number mismatch")
+{
 }

@@ -24,14 +24,34 @@ public:
 
     void EmptyFile()
     {
-        persist::map_file file("file.db", 1000, 1000, persist::create_new);
+        persist::map_file file("file.db", 0, 0, 0, 1000, 1000, persist::create_new);
         CHECK(file);
         CHECK(file.data().empty());
+        CHECK(file.data().size()==0);
     }
     
     void Versions()
     {
-        // check_throws<persist::error>(
+        {
+            persist::map_file file("file.db", 0, 0, 0, 1000, 1000, persist::create_new);
+        }
+        
+        {
+            // Reopen no problem
+            persist::map_file file("file.db", 0, 0, 0);
+        }
+        
+        CheckThrows<persist::InvalidVersion>([]() {
+            persist::map_file file("file.db", 1, 0, 0);
+        }, __FILE__,__LINE__);
+
+        CheckThrows<persist::InvalidVersion>([]() {
+            persist::map_file file("file.db", 0, 1, 0);
+        }, __FILE__,__LINE__);
+
+        CheckThrows<persist::InvalidVersion>([]() {
+            persist::map_file file("file.db", 0, 0, 1);
+        }, __FILE__,__LINE__);
     }
     
     typedef std::basic_string<char, std::char_traits<char>, persist::allocator<char>> pstring;
@@ -55,28 +75,28 @@ public:
     
     void TestData()
     {
-        persist::map_file file("file.db");
+        persist::map_file file("file.db", 0, 0, 0);
     }
     
     void TestLimits()
     {
         {
-            persist::map_file file("file.db", 16384, 16384, persist::create_new);
+            persist::map_file file("file.db", 0,0,0,16384, 16384, persist::create_new);
             TestHeapLimit(file.data(), 16384);
         }
 
         {
-            persist::map_file file("file.db", 16384, 65536, persist::create_new);
+            persist::map_file file("file.db", 0,0,0,16384, 65536, persist::create_new);
             TestHeapLimit(file.data(), 65536);
         }
 
         {
-            persist::map_file file(nullptr, 16384, 16384, persist::temp_heap);
+            persist::map_file file(nullptr, 0,0,0,16384, 16384, persist::temp_heap);
             TestHeapLimit(file.data(), 16384);
         }
 
         {
-            persist::map_file file(nullptr, 16384, 65536, persist::temp_heap);
+            persist::map_file file(nullptr, 0,0,0,16384, 65536, persist::temp_heap);
             TestHeapLimit(file.data(), 65536);
         }
     }
@@ -118,7 +138,7 @@ public:
         
         for(int i=0; i<8; ++i)
         {
-            p = mem.fast_malloc(initial_capacity/8);
+            p = mem.fast_malloc((initial_capacity/8)&~7);
             CHECK(p);
         }
     }
@@ -126,7 +146,7 @@ public:
     void TestModes()
     {
         {
-            persist::map_file file(nullptr, 16384, 16384, persist::temp_heap);
+            persist::map_file file(nullptr, 0,0,0,16384, 16384, persist::temp_heap);
             CHECK(file);
             
             persist::map_data<Demo> data { file.data(), file.data() };
@@ -145,7 +165,7 @@ public:
         }
 
         {
-            persist::map_file file("file.db", 16384, 10000, persist::create_new);
+            persist::map_file file("file.db", 0, 0, 0, 16384, 10000, persist::create_new);
             CHECK(file);
             persist::map_data<Demo> data { file.data(), file.data() };
             EQUALS(0, data->value);
@@ -153,7 +173,7 @@ public:
         }
 
         {
-            persist::map_file file("file.db", 16384, 10000);
+            persist::map_file file("file.db", 0, 0, 0, 16384, 10000);
             CHECK(file);
             persist::map_data<Demo> data { file.data(), file.data() };
             EQUALS(10, data->value);
@@ -163,7 +183,7 @@ public:
 
     void TestAllocators()
     {
-        persist::map_file file(nullptr, 16384, 1000000, persist::temp_heap);
+        persist::map_file file(nullptr, 0,0,0,16384, 1000000, persist::temp_heap);
         CHECK(file);
         
         persist::map_data<Demo> data { file.data(), file.data() };

@@ -18,18 +18,21 @@ using namespace persist;
 // It first read the first part of the file, and the might need to remap the file to the 
 // location specified by the first invocation of the map.
 
-map_file::map_file(const char *filename, size_t length, size_t limit, int flags, size_t base)
+map_file::map_file(const char *filename, int applicationId, short majorVersion, short minorVersion,
+                   size_t length, size_t limit, int flags, size_t base)
 {
     map_address = 0;
-    open(filename, length, limit, flags, base);
+    open(filename, applicationId, majorVersion, minorVersion, length, limit, flags, base);
 }
 
-void map_file::open(const char *filename, size_t length, size_t limit, int flags, size_t base)
+void map_file::open(const char *filename,  int applicationId, short majorVersion, short minorVersion, size_t length, size_t limit, int flags, size_t base)
 {
     close();
-    // mem_mutex = PTHREAD_MUTEX_INITIALIZER;
-    // user_mutex = PTHREAD_MUTEX_INITIALIZER;
+    
+    const int persistMagic = 0x99a10f0f;
+    const int hardwareId = 0x00000001;
 
+    
     int mapFlags;
 
     if(flags & private_map) mapFlags = MAP_PRIVATE|MAP_FIXED;
@@ -98,7 +101,7 @@ void map_file::open(const char *filename, size_t length, size_t limit, int flags
 
         void *previous_address = map_address->address;
         size_t previous_length = map_address->current_size;
-
+        
         if(previous_address && (previous_length != length || previous_address != map_address))
         {
              munmap((char*)map_address, length);
@@ -121,6 +124,17 @@ void map_file::open(const char *filename, size_t length, size_t limit, int flags
     {
         if(map_address->address)
         {
+            // Check the versions
+            if(map_address->magic != persistMagic ||
+               map_address->applicationId != applicationId ||
+               map_address->hardwareId != hardwareId ||
+               map_address->majorVersion != majorVersion ||
+               map_address->minorVersion != minorVersion)
+            {
+                close();
+                throw InvalidVersion();
+            }
+            
             if(map_address->address != map_address)
             {
                 // This is a failure!
@@ -137,6 +151,11 @@ void map_file::open(const char *filename, size_t length, size_t limit, int flags
             map_address->max_size = limit;
             map_address->end = (char*)map_address + length;
             map_address->top = (char*)map_address->root();
+            map_address->magic = persistMagic;
+            map_address->applicationId = applicationId;
+            map_address->hardwareId = hardwareId;
+            map_address->majorVersion = majorVersion;
+            map_address->minorVersion = minorVersion;
             
             pthread_mutex_init(&map_address->extra.mem_mutex, 0);
             pthread_mutex_init(&map_address->extra.user_mutex, 0);
@@ -150,8 +169,6 @@ void map_file::open(const char *filename, size_t length, size_t limit, int flags
 
     // Report on where it ended up
     // std::cout << "Mapped to " << map_address << std::endl;
-
-    global = this;
 }
 
 
