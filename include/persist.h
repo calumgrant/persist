@@ -19,6 +19,8 @@ namespace persist
     class shared_memory
     {
     public:
+        typedef std::size_t size_type;
+        
         // Returns true if the heap is empty: no objects have yet been created
         bool empty() const;
         
@@ -34,14 +36,20 @@ namespace persist
         void *malloc(size_t);
         void free(void*, size_t);
         
+        void clear();
+        
+        size_t capacity() const;
+        
         void *fast_malloc(size_t size)
         {
+            assert((size&7)==0);
             auto result = top += size;
             if(result > end)
             {
                 extend_mapping(size);
             }
-            return result;
+            // top is a std::atmoic, so we need to do it like this:
+            return result - size;
         }
 
 
@@ -189,7 +197,8 @@ namespace persist
     {
     public:
         fast_allocator(map_file & map) : map(map.data()) { }
-        
+        fast_allocator(shared_memory & mem) : map(mem) { }
+
         // Construct from another allocator
         template<class O>
         fast_allocator(const fast_allocator<O>&o) : map(o.map) { }
@@ -234,6 +243,7 @@ namespace persist
     {
     public:
         allocator(map_file & map) : map(map.data()) { }
+        allocator(shared_memory & mem) : map(mem) { }
 
         // Construct from another allocator
         template<class O>
@@ -281,15 +291,15 @@ namespace persist
         typedef T value_type;
         
         template<typename... ConstructorArgs>
-        map_data(map_file & file, ConstructorArgs&&... init) : file(file.data())
+        map_data(shared_memory & mem, ConstructorArgs&&... init) : file(mem)
         {
-            if(file.data().empty())
+            if(mem.empty())
             {                
                 new(file) value_type(std::forward<ConstructorArgs&&...>(init...));
             }
         }
 
-        map_data(map_file & file) : file(file.data())
+        map_data(shared_memory & mem) : file(mem)
         {
             if(this->file.empty())
             {
@@ -313,7 +323,7 @@ namespace persist
 }
 
 
-void *operator new(size_t size, persist::map_file&share);
-void operator delete(void *p, persist::map_file&share);
+void *operator new(size_t size, persist::shared_memory & mem);
+void operator delete(void *p, persist::shared_memory & mem);
 
 #endif

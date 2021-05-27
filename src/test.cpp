@@ -47,9 +47,9 @@ public:
         std::shared_ptr<int> intptr;
         std::vector<pstring, persist::allocator<pstring>> vec;
     
-        Demo(persist::map_file & map) : string1(map), string2(map), vec(persist::allocator<pstring>(map))
+        Demo(persist::shared_memory & mem) : string1(mem), string2(mem), vec(persist::allocator<pstring>(mem))
         {
-            intptr = std::allocate_shared<int, persist::fast_allocator<int>>(map, 123);
+            intptr = std::allocate_shared<int, persist::fast_allocator<int>>(mem, 123);
         }
     };
     
@@ -60,7 +60,66 @@ public:
     
     void TestLimits()
     {
+        {
+            persist::map_file file("file.db", 16384, 16384, persist::create_new);
+            TestHeapLimit(file.data(), 16384);
+        }
+
+        {
+            persist::map_file file("file.db", 16384, 65536, persist::create_new);
+            TestHeapLimit(file.data(), 65536);
+        }
+
+        {
+            persist::map_file file(nullptr, 16384, 16384, persist::temp_heap);
+            TestHeapLimit(file.data(), 16384);
+        }
+
+        {
+            persist::map_file file(nullptr, 16384, 65536, persist::temp_heap);
+            TestHeapLimit(file.data(), 65536);
+        }
+    }
+    
+    void ValidateMemory(void *p, size_t size)
+    {
+        char *c=(char*)p;
+        for(int i=0; i<size; ++i)
+            c[i] = i;
+
+        for(int i=0; i<size; ++i)
+            EQUALS((char)i, c[i]);
+    }
+
+    void TestHeapLimit(persist::shared_memory &mem, size_t expected_limit)
+    {
+        auto initial_capacity = mem.capacity();
+
+        auto p = mem.malloc(mem.capacity()/2);
+        CHECK(p);
+        ValidateMemory(p, initial_capacity/2);
+        mem.clear();
+
+        p = mem.malloc(expected_limit);
+        CHECK(!p);
+        mem.clear();
+        EQUALS(initial_capacity, mem.capacity());
+
+        p = mem.malloc(mem.capacity()/2);
+        CHECK(p);
+        ValidateMemory(p, initial_capacity/2);
+        mem.clear();
         
+        p = mem.fast_malloc(mem.capacity());
+        ValidateMemory(p, initial_capacity);
+        CHECK(p);
+        mem.clear();
+        
+        for(int i=0; i<8; ++i)
+        {
+            p = mem.fast_malloc(initial_capacity/8);
+            CHECK(p);
+        }
     }
     
     void TestModes()
@@ -69,14 +128,17 @@ public:
             persist::map_file file(nullptr, 16384, 16384, persist::temp_heap);
             CHECK(file);
             
-            persist::map_data<Demo> data { file, file };
+            persist::map_data<Demo> data { file.data(), file.data() };
             data->value = 10;
             
             bool failed = false;
             for(int i=0; i<100; ++i)
             {
                 auto p = file.data().malloc(1000);
-                if(!p) failed = true;
+                if(p)
+                    rValidateMemory(p, 1000);
+                else
+                    failed = true;
             }
             CHECK(failed);
         }
@@ -84,7 +146,7 @@ public:
         {
             persist::map_file file("file.db", 16384, 10000, persist::create_new);
             CHECK(file);
-            persist::map_data<Demo> data { file, file };
+            persist::map_data<Demo> data { file.data(), file.data() };
             EQUALS(0, data->value);
             data->value = 10;
         }
@@ -92,19 +154,18 @@ public:
         {
             persist::map_file file("file.db", 16384, 10000);
             CHECK(file);
-            persist::map_data<Demo> data { file, file };
+            persist::map_data<Demo> data { file.data(), file.data() };
             EQUALS(10, data->value);
         }
 
     }
-    
 
     void TestAllocators()
     {
         persist::map_file file(nullptr, 16384, 1000000, persist::temp_heap);
         CHECK(file);
         
-        persist::map_data<Demo> data { file, file };
+        persist::map_data<Demo> data { file.data(), file.data() };
     }
 } tp;
 

@@ -37,15 +37,23 @@ void map_file::open(const char *filename, size_t length, size_t limit, int flags
     
     int fd = -1;
     
+    int open_flags = O_RDWR;
+    if(flags & create_new) open_flags |= O_TRUNC;
+    
     if(flags & temp_heap)
-        mapFlags |= MAP_ANON;
+    {
+        char filename[] = "/tmp/persist-XXXXXX";
+        fd = mkstemp(filename);
+        remove(filename);
+        
+        char c=0;
+        lseek(fd, length-1, SEEK_SET);
+        write(fd, &c, 1);
+    }
     else
     {
-        int open_flags = O_RDWR;
-        if(flags & create_new) open_flags |= O_TRUNC;
-        
         fd = ::open(filename, open_flags, S_IRWXU|S_IRGRP|S_IROTH);
-        
+    
         if(fd == -1)
         {
             // File did not exist, so we create it instead
@@ -67,6 +75,7 @@ void map_file::open(const char *filename, size_t length, size_t limit, int flags
             write(fd, &c, 1);
         }
     }
+
     
     // Seek to the end of the file: we need to ensure enough of the file is allocated
     if(base == 0) mapFlags -= MAP_FIXED;
@@ -174,6 +183,8 @@ void shared_memory::unmap()
 
 void shared_memory::extend_mapping(size_t extra)
 {
+    if(current_size == max_size) return;
+    
     // assert(map_address == base_address);
     size_t old_length = current_size;
 
@@ -185,10 +196,13 @@ void shared_memory::extend_mapping(size_t extra)
         new_length = max_size;
 
     // extend the file a bit
-    char c=0;
-    lseek(this->extra.fd, new_length-1, SEEK_SET);
-    write(this->extra.fd, &c, 1);
-
+    // fd==-1 when we use an anomymous/temporary mapping.
+    if(this->extra.fd != -1)
+    {
+        char c=0;
+        lseek(this->extra.fd, new_length-1, SEEK_SET);
+        write(this->extra.fd, &c, 1);
+    }
 #if MREMAP
     void *new_address = mremap((char*)map_address, old_length, new_length, 0);  // Do NOT relocate it
 

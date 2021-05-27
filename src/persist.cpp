@@ -25,9 +25,9 @@ map_file *map_file::global = 0;
 //
 // Allocates space for one object in the shared memory
 
-void *operator new(size_t size, persist::map_file &file)
+void *operator new(size_t size, persist::shared_memory &file)
 {
-    void *p = file.data().malloc(size);
+    void *p = file.malloc(size);
 
     if(!p) throw std::bad_alloc();
 
@@ -39,9 +39,8 @@ void *operator new(size_t size, persist::map_file &file)
 //
 // Matches operator new.  Not used.
 
-void operator delete(void *p, persist::map_file &file)
+void operator delete(void *p, persist::shared_memory &file)
 {
-    assert(0);
 }
 
 
@@ -118,12 +117,16 @@ void *shared_memory::malloc(size_t size)
 #endif
 
     void *t = top;
+    
+    auto tmp_capacity = end-top;
 
     if(top + size > end && max_size > current_size)
     {
         // We have run out of mapped memory
         extend_mapping(size);      // Try to extend the address space
     }
+
+    auto tmp_capacity2 = end-top;
 
 
     if(top + size > end)
@@ -232,4 +235,16 @@ bool shared_memory::empty() const
 shared_memory & map_file::data() const
 {
     return *map_address;
+}
+
+void shared_memory::clear()
+{
+    top = (char*)root();
+    for(int i=0; i<64; ++i)
+        free_space[i] = nullptr;
+}
+
+size_t shared_memory::capacity() const
+{
+    return (end-top) + (max_size - current_size);
 }
