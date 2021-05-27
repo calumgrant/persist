@@ -117,26 +117,19 @@ void *shared_memory::malloc(size_t size)
 #endif
 
     void *t = top;
-    
-    auto tmp_capacity = end-top;
+        
+    auto new_top = top + size;
 
-    if(top + size > end && max_size > current_size)
+    if(new_top > end)
     {
-        // We have run out of mapped memory
-        extend_mapping(size);      // Try to extend the address space
+        if(max_size <= current_size || !extend_to(new_top))
+        {
+            unlockMem();
+            return nullptr;
+        }
     }
 
-    auto tmp_capacity2 = end-top;
-
-
-    if(top + size > end)
-    {
-        // We were unable to extend the mapped memory
-        unlockMem();
-        return 0;  // Failure
-    }
-
-    top += size;
+    top = new_top;
 
 #if TRACE_ALLOCS
     std::cout << " +" << t << "(" << size << ")";

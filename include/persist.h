@@ -46,7 +46,11 @@ namespace persist
             auto result = top += size;
             if(result > end)
             {
-                extend_mapping(size);
+                lockMem();
+                bool failed = !extend_to(result);
+                if(failed) top -= size;
+                unlockMem();
+                if(failed) return nullptr;
             }
             // top is a std::atmoic, so we need to do it like this:
             return result - size;
@@ -61,8 +65,6 @@ namespace persist
         size_t current_size;          // The size of the allocation
         size_t max_size;
 
-        // pthread_mutex_t mutex;   // For shared data
-
         void *condition;
 
         std::atomic<char *> top, end;
@@ -71,7 +73,7 @@ namespace persist
         
         shared_base extra;
         
-        void extend_mapping(size_t size);
+        bool extend_to(void *newTop);
         void unmap();
         void lockMem();
         void unlockMem();

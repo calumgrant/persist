@@ -111,6 +111,7 @@ public:
         mem.clear();
         
         p = mem.fast_malloc(mem.capacity());
+        CHECK(p);
         ValidateMemory(p, initial_capacity);
         CHECK(p);
         mem.clear();
@@ -136,7 +137,7 @@ public:
             {
                 auto p = file.data().malloc(1000);
                 if(p)
-                    rValidateMemory(p, 1000);
+                    ValidateMemory(p, 1000);
                 else
                     failed = true;
             }

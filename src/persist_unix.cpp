@@ -181,20 +181,25 @@ void shared_memory::unmap()
 
 #define MREMAP 0    // 1 on Linux
 
-void shared_memory::extend_mapping(size_t extra)
+bool shared_memory::extend_to(void * new_top)
 {
-    if(current_size == max_size) return;
+    if(current_size == max_size) return false;
     
     // assert(map_address == base_address);
     size_t old_length = current_size;
+    size_t new_length = old_length + (old_length>>1);
+    size_t min_length = (char*)new_top - (char*)this;
+    
+    
+    while(new_length < max_size && new_length < min_length)
+        new_length += (new_length>>1);
 
-    if(extra<16384) extra = 16384;
-    if(extra < old_length/2) extra = old_length/2;
-
-    size_t new_length = old_length + extra;
     if(new_length > max_size)
         new_length = max_size;
 
+    if(new_length < min_length) return false;
+
+    
     // extend the file a bit
     // fd==-1 when we use an anomymous/temporary mapping.
     if(this->extra.fd != -1)
@@ -226,12 +231,14 @@ void shared_memory::extend_mapping(size_t extra)
         char *m = (char*)mmap((char*)this, old_length, PROT_WRITE|PROT_READ, mapFlags, fd, 0);
         assert(m != MAP_FAILED);
         assert(m == (char*)this);
+        return false;
     }
     else
     {
         assert(m == (char*)this);
         current_size = new_length;
         end = (char*)this + new_length;
+        return true;
     }
 
 #endif
