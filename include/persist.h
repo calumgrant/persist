@@ -255,7 +255,17 @@ namespace persist
             return *static_cast<T*>(file.root());
         }
 
+        const value_type &operator*() const
+        {
+            return *static_cast<T*>(file.root());
+        }
+        
         value_type *operator->()
+        {
+            return static_cast<T*>(file.root());
+        }
+
+        const value_type *operator->() const
         {
             return static_cast<T*>(file.root());
         }
