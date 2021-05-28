@@ -65,6 +65,7 @@ namespace persist
 
     private:
         friend class map_file;
+        shared_memory(const shared_memory&) = delete;
         
         // Magic bytes to check we have loaded the correct version
         int magic;
