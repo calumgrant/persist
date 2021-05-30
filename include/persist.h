@@ -46,6 +46,7 @@ namespace persist
         
         size_type capacity() const;
         size_type size() const;
+        size_type limit() const;
         
         void *fast_malloc(size_t size)
         {
