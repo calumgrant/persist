@@ -156,9 +156,9 @@ void map_file::open(const char *filename,  int applicationId, short majorVersion
             map_address->hardwareId = hardwareId;
             map_address->majorVersion = majorVersion;
             map_address->minorVersion = minorVersion;
-            
-            pthread_mutex_init(&map_address->extra.mem_mutex, 0);
-            pthread_mutex_init(&map_address->extra.user_mutex, 0);
+
+            new(&map_address->extra.mem_mutex) std::mutex();
+            new(&map_address->extra.user_mutex) std::mutex();
             map_address->extra.mapFlags = mapFlags;
             map_address->extra.fd = fd;
 
@@ -264,25 +264,25 @@ bool shared_memory::extend_to(void * new_top)
 
 bool shared_memory::lock(int ms)
 {
-    pthread_mutex_lock(&extra.user_mutex);
+    extra.user_mutex.lock();
     return true;
 }
 
 
 void shared_memory::unlock()
 {
-    pthread_mutex_unlock(&extra.user_mutex);
+    extra.user_mutex.unlock();
 }
 
 void shared_memory::lockMem()
 {
-    pthread_mutex_lock(&extra.mem_mutex);
+    extra.mem_mutex.lock();
 }
 
 
 void shared_memory::unlockMem()
 {
-    pthread_mutex_unlock(&extra.mem_mutex);
+    extra.mem_mutex.unlock();
 }
 
 map_file::map_file()

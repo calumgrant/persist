@@ -3,7 +3,7 @@
 //
 // Data stored specific to unix
 
-#include <pthread.h>
+#include <mutex>
 
 namespace persist
 {
@@ -15,8 +15,7 @@ namespace persist
     {
     public:
         int fd;
-        pthread_mutex_t mem_mutex;
-        pthread_mutex_t user_mutex;
+        std::mutex mem_mutex, user_mutex;
         int mapFlags;
     };
 
