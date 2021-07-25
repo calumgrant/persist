@@ -237,6 +237,11 @@ size_t shared_memory::limit() const
     return max_size;
 }
 
+void shared_memory::limit(size_t size)
+{
+    max_size = size;
+}
+
 InvalidVersion::InvalidVersion() : std::runtime_error("Version number mismatch")
 {
 }
