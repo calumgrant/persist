@@ -51,6 +51,9 @@ namespace persist
 
         void *fast_malloc(size_t size)
         {
+            auto r = size&7;
+            if(r)
+                size += (8-r);
             assert((size&7)==0);
             auto result = top += size;
             if(result > end)
@@ -241,7 +244,7 @@ namespace persist
         {
             if(mem.empty())
             {                
-                new(file) value_type(std::forward<ConstructorArgs&&...>(init...));
+                new(file) value_type(init...);
             }
         }
 
