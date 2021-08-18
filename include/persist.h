@@ -11,6 +11,8 @@
 #endif
 
 #include <memory>
+#include <cassert>
+#include <atomic>
 
 namespace persist
 {

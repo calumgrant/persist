@@ -1,9 +1,9 @@
 project (persist)
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.16)
 
 enable_testing()
 
-add_library(persist persist.cpp persist_unix.cpp shared_data.h ../include/persist.h ../include/persist_unix.h)
+add_library(persist SHARED persist.cpp persist_unix.cpp shared_data.h ../include/persist.h ../include/persist_unix.h)
 
 include_directories(../include)
 
